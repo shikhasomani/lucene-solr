@@ -16,18 +16,18 @@
  */
 package org.apache.solr.cloud;
 
-import java.io.Closeable;
+import org.apache.solr.core.CoreContainer;
+import org.apache.solr.core.CoreDescriptor;
 
-public abstract class RecoveryStrategy extends Thread implements Closeable {
-
-  public static interface RecoveryListener {
-    public void recovered();
-    public void failed();
-  }
-
-  public abstract boolean getRecoveringAfterStartup();
-  public abstract void setRecoveringAfterStartup(boolean recoveringAfterStartup);
+/**
+ * A factory for creating a {@link DefaultRecoveryStrategy}.
+ */
+public class DefaultRecoveryStrategyFactory extends RecoveryStrategyFactory {
 
   @Override
-  public abstract void close();
+  public RecoveryStrategy newRecoveryStrategy(CoreContainer cc, CoreDescriptor cd,
+      RecoveryStrategy.RecoveryListener recoveryListener) {
+    return new DefaultRecoveryStrategy(cc, cd, recoveryListener);
+  }
+
 }

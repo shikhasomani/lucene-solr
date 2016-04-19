@@ -52,6 +52,8 @@ import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.LockObtainFailedException;
 import org.apache.solr.client.solrj.impl.BinaryResponseParser;
 import org.apache.solr.cloud.CloudDescriptor;
+import org.apache.solr.cloud.DefaultRecoveryStrategyFactory;
+import org.apache.solr.cloud.RecoveryStrategyFactory;
 import org.apache.solr.cloud.ZkSolrResourceLoader;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.cloud.ClusterState;
@@ -158,6 +160,7 @@ public final class SolrCore implements SolrInfoMBean, Closeable {
   private final Map<String, SolrInfoMBean> infoRegistry;
   private final IndexDeletionPolicyWrapper solrDelPolicy;
   private final DirectoryFactory directoryFactory;
+  private final RecoveryStrategyFactory recoveryStrategyFactory;
   private IndexReaderFactory indexReaderFactory;
   private final Codec codec;
   private final MemClassLoader memClassLoader;
@@ -493,6 +496,20 @@ public final class SolrCore implements SolrInfoMBean, Closeable {
     return dirFactory;
   }
 
+  private RecoveryStrategyFactory initRecoveryStrategyFactory() {
+    final PluginInfo info = solrConfig.getPluginInfo(RecoveryStrategyFactory.class.getName());
+    final RecoveryStrategyFactory rsFactory;
+    if (info != null) {
+      log.info(info.className);
+      rsFactory = getResourceLoader().newInstance(info.className, RecoveryStrategyFactory.class);
+      rsFactory.init(info.initArgs);
+    } else {
+      log.info("solr.RecoveryStrategyFactory");
+      rsFactory = new DefaultRecoveryStrategyFactory();
+    }
+    return rsFactory;
+  }
+
   private void initIndexReaderFactory() {
     IndexReaderFactory indexReaderFactory;
     PluginInfo info = solrConfig.getPluginInfo(IndexReaderFactory.class.getName());
@@ -681,10 +698,12 @@ public final class SolrCore implements SolrInfoMBean, Closeable {
 
     if (updateHandler == null) {
       directoryFactory = initDirectoryFactory();
-      solrCoreState = new DefaultSolrCoreState(directoryFactory);
+      recoveryStrategyFactory = initRecoveryStrategyFactory();
+      solrCoreState = new DefaultSolrCoreState(directoryFactory, recoveryStrategyFactory);
     } else {
       solrCoreState = updateHandler.getSolrCoreState();
       directoryFactory = solrCoreState.getDirectoryFactory();
+      recoveryStrategyFactory = solrCoreState.getRecoveryStrategyFactory();
       isReloaded = true;
     }
 

@@ -32,7 +32,9 @@ import org.apache.lucene.index.MergePolicy;
 import org.apache.lucene.index.SortingMergePolicy;
 import org.apache.lucene.search.Sort;
 import org.apache.solr.cloud.ActionThrottle;
+import org.apache.solr.cloud.DefaultRecoveryStrategyFactory;
 import org.apache.solr.cloud.RecoveryStrategy;
+import org.apache.solr.cloud.RecoveryStrategyFactory;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrException.ErrorCode;
 import org.apache.solr.core.CoreContainer;
@@ -63,6 +65,7 @@ public final class DefaultSolrCoreState extends SolrCoreState implements Recover
 
   private SolrIndexWriter indexWriter = null;
   private DirectoryFactory directoryFactory;
+  private final RecoveryStrategyFactory recoveryStrategyFactory;
 
   private volatile RecoveryStrategy recoveryStrat;
 
@@ -76,8 +79,15 @@ public final class DefaultSolrCoreState extends SolrCoreState implements Recover
   
   protected final ReentrantLock commitLock = new ReentrantLock();
 
+  @Deprecated
   public DefaultSolrCoreState(DirectoryFactory directoryFactory) {
+    this(directoryFactory, new DefaultRecoveryStrategyFactory());
+  }
+
+  public DefaultSolrCoreState(DirectoryFactory directoryFactory,
+      RecoveryStrategyFactory recoveryStrategyFactory) {
     this.directoryFactory = directoryFactory;
+    this.recoveryStrategyFactory = recoveryStrategyFactory;
   }
   
   private void closeIndexWriter(IndexWriterCloser closer) {
@@ -263,6 +273,11 @@ public final class DefaultSolrCoreState extends SolrCoreState implements Recover
   }
 
   @Override
+  public RecoveryStrategyFactory getRecoveryStrategyFactory() {
+    return recoveryStrategyFactory;
+  }
+
+  @Override
   public void doRecovery(CoreContainer cc, CoreDescriptor cd) {
     
     Thread thread = new Thread() {
@@ -310,7 +325,7 @@ public final class DefaultSolrCoreState extends SolrCoreState implements Recover
               recoveryThrottle.minimumWaitBetweenActions();
               recoveryThrottle.markAttemptingAction();
               
-              recoveryStrat = new RecoveryStrategy(cc, cd, DefaultSolrCoreState.this);
+              recoveryStrat = recoveryStrategyFactory.create(cc, cd, DefaultSolrCoreState.this);
               recoveryStrat.setRecoveringAfterStartup(recoveringAfterStartup);
               Future<?> future = cc.getUpdateShardHandler().getRecoveryExecutor().submit(recoveryStrat);
               try {
