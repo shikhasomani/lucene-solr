@@ -124,11 +124,14 @@ public class DefaultRecoveryStrategy extends RecoveryStrategy {
     }
   }
   
+  protected String getReplicateLeaderUrl(ZkNodeProps leaderprops) {
+    return new ZkCoreNodeProps(leaderprops).getCoreUrl();
+  }
+
   private void replicate(String nodeName, SolrCore core, ZkNodeProps leaderprops)
       throws SolrServerException, IOException {
 
-    ZkCoreNodeProps leaderCNodeProps = new ZkCoreNodeProps(leaderprops);
-    String leaderUrl = leaderCNodeProps.getCoreUrl();
+    final String leaderUrl = getReplicateLeaderUrl(leaderprops);
     
     LOG.info("Attempting to replicate from [{}].", leaderUrl);
     
