@@ -16,7 +16,6 @@
  */
 package org.apache.solr.cloud;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
@@ -65,7 +64,7 @@ import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class DefaultRecoveryStrategy extends Thread implements Closeable {
+public class DefaultRecoveryStrategy extends RecoveryStrategy {
 
   private static final Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -73,14 +72,9 @@ public class DefaultRecoveryStrategy extends Thread implements Closeable {
   private static final int MAX_RETRIES = 500;
   private static final int STARTING_RECOVERY_DELAY = 5000;
 
-  public static interface RecoveryListener {
-    public void recovered();
-    public void failed();
-  }
-  
   private volatile boolean close = false;
 
-  private RecoveryListener recoveryListener;
+  private RecoveryStrategy.RecoveryListener recoveryListener;
   private ZkController zkController;
   private String baseUrl;
   private String coreZkNodeName;
@@ -92,7 +86,7 @@ public class DefaultRecoveryStrategy extends Thread implements Closeable {
   private volatile HttpUriRequest prevSendPreRecoveryHttpUriRequest;
   
   // this should only be used from SolrCoreState
-  public DefaultRecoveryStrategy(CoreContainer cc, CoreDescriptor cd, RecoveryListener recoveryListener) {
+  public DefaultRecoveryStrategy(CoreContainer cc, CoreDescriptor cd, RecoveryStrategy.RecoveryListener recoveryListener) {
     this.cc = cc;
     this.coreName = cd.getName();
     this.recoveryListener = recoveryListener;
@@ -103,6 +97,7 @@ public class DefaultRecoveryStrategy extends Thread implements Closeable {
     coreZkNodeName = cd.getCloudDescriptor().getCoreNodeName();
   }
 
+  @Override
   public void setRecoveringAfterStartup(boolean recoveringAfterStartup) {
     this.recoveringAfterStartup = recoveringAfterStartup;
   }
