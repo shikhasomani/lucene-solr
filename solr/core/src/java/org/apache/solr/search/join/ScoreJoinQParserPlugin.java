@@ -17,6 +17,8 @@
 package org.apache.solr.search.join;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.lucene.index.DocValuesType;
@@ -239,12 +241,12 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
         if (fromIndex != null && (!fromIndex.equals(myCore) || byPassShortCircutCheck)) {
           CoreContainer container = req.getCore().getCoreDescriptor().getCoreContainer();
           CloudDescriptor cloudDescriptor = req.getCore().getCoreDescriptor().getCloudDescriptor();
-          final String coreName = getCoreName(fromIndex, container, cloudDescriptor, req);
-          final SolrCore fromCore = container.getCore(coreName);
+          final List<String> coreNameList = getCoreName(fromIndex, container, cloudDescriptor, req);
+          final SolrCore fromCore = container.getCore(coreNameList.get(0));
           RefCounted<SolrIndexSearcher> fromHolder = null;
 
           if (fromCore == null) {
-            throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "Cross-core join: no such core " + coreName);
+            throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "Cross-core join: no such core " + coreNameList.get(0));
           }
 
           long fromCoreOpenTime = 0;
@@ -258,7 +260,7 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
             if (fromHolder != null) {
               fromCoreOpenTime = fromHolder.get().getOpenNanoTime();
             }
-            return new OtherCoreJoinQuery(fromQuery, fromField, coreName, fromCoreOpenTime,
+            return new OtherCoreJoinQuery(fromQuery, fromField, coreNameList.get(0), fromCoreOpenTime,
                 scoreMode, toField);
           } finally {
             otherReq.close();
@@ -286,7 +288,7 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
    * @param  container the core container for searching the core with fromIndex name or alias
    * @return      the string with name of core
    */
-  public static String getCoreName(final String fromIndex, CoreContainer container, CloudDescriptor cloudDescriptor, SolrQueryRequest req) {
+  public static List<String> getCoreName(final String fromIndex, CoreContainer container, CloudDescriptor cloudDescriptor, SolrQueryRequest req) {
     if (container.isZooKeeperAware()) {
       ZkController zkController = container.getZkController();
       final String resolved =
@@ -298,7 +300,9 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
       }
       return findLocalReplicaForFromIndex(zkController, resolved, cloudDescriptor, req);
     }
-    return fromIndex;
+    ArrayList fromIndexList = new ArrayList<String>(1);
+    fromIndexList.add(fromIndex);
+    return fromIndexList;
   }
 
   private static String resolveAlias(String fromIndex, ZkController zkController) {
@@ -320,11 +324,12 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
     return null;
   }
 
-  private static String findLocalReplicaForFromIndex(ZkController zkController, String fromIndex, CloudDescriptor cloudDescriptor, SolrQueryRequest req) {
+  private static List<String> findLocalReplicaForFromIndex(ZkController zkController, String fromIndex, CloudDescriptor cloudDescriptor, SolrQueryRequest req) {
     String fromReplica = null;
     String toShardId = cloudDescriptor.getShardId();
     String nodeName = zkController.getNodeName();
     
+    List<String> availableReplicaList = new ArrayList<String>();
     CoreDescriptor containerDesc = req.getCore().getCoreDescriptor();
     //CloudDescriptor cloudDescriptor = req.getCore().getCoreDescriptor().getCloudDescriptor();
     
@@ -352,14 +357,19 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
       //get replica on this node
       fromReplica = findReplica(fromIndex, fromReplica, toShardId, nodeName, toRange, slice);
       
+      if(fromReplica != null){
+        System.out.println("Selected Replica !!! " + fromReplica + "\n\n ");
+        availableReplicaList.add(fromReplica);
+      }
     }
 
-    if (fromReplica == null)
+    if (availableReplicaList.isEmpty()){
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
           "SolrCloud join: No active replicas for "+fromIndex+
               " found in node " + nodeName + " Shard: " + toShardId);
+    }
 
-    return fromReplica;
+    return availableReplicaList;
   }
 
   private static String findReplica(String fromIndex, String fromReplica, String toShardId, String nodeName,
@@ -374,15 +384,12 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
         if(!toShardId.equals(slice.getName())){
           System.out.println(" shardId not equal to slice name:: " + slice.getName());
         }
-        if (fromReplica == null) {
-          fromReplica = replica.getStr(ZkStateReader.CORE_NAME_PROP);
-        } else {
-          throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
-              "SolrCloud join: multiple shards not yet supported " + fromIndex);
-        }
+        
+        return replica.getStr(ZkStateReader.CORE_NAME_PROP);
       }
     }
-    return fromReplica;
+    
+    return null;
   }
   
   private static String getRouterField(DocCollection docCollection){

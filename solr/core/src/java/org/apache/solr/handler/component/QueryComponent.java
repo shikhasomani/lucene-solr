@@ -16,6 +16,8 @@
  */
 package org.apache.solr.handler.component;
 
+import static org.apache.solr.common.params.CommonParams.PATH;
+
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -78,6 +80,7 @@ import org.apache.solr.search.DocList;
 import org.apache.solr.search.DocListAndSet;
 import org.apache.solr.search.DocSlice;
 import org.apache.solr.search.Grouping;
+import org.apache.solr.search.JoinQParserPlugin;
 import org.apache.solr.search.QParser;
 import org.apache.solr.search.QParserPlugin;
 import org.apache.solr.search.QueryCommand;
@@ -109,6 +112,7 @@ import org.apache.solr.search.grouping.endresulttransformer.EndResultTransformer
 import org.apache.solr.search.grouping.endresulttransformer.GroupedEndResultTransformer;
 import org.apache.solr.search.grouping.endresulttransformer.MainEndResultTransformer;
 import org.apache.solr.search.grouping.endresulttransformer.SimpleEndResultTransformer;
+import org.apache.solr.search.join.JoinSpecification;
 import org.apache.solr.search.stats.StatsCache;
 import org.apache.solr.util.SolrPluginUtils;
 import org.slf4j.Logger;
@@ -160,6 +164,12 @@ public class QueryComponent extends SearchComponent
     try {
       QParser parser = QParser.getParser(rb.getQueryString(), defType, req);
       Query q = parser.getQuery();
+      
+      boolean isJoinQuery = true;
+      if(isJoinQuery){
+        prepareJoinSpec(rb, q);
+      }
+      
       if (q == null) {
         // normalize a null query to a query that matches nothing
         q = new MatchNoDocsQuery();
@@ -292,7 +302,47 @@ public class QueryComponent extends SearchComponent
   }
 
 
+  private void prepareJoinSpec(ResponseBuilder rb, Query query){
+    
+    JoinSpecification joinSpec = new JoinSpecification();
+    
+    joinSpec.setQueryList(JoinQParserPlugin.getMultiShardQueries());
+    
+    rb.setJoinSpec(joinSpec);
+  }
 
+  
+  private void processJoinQuery(ResponseBuilder rb,ShardRequest sreq){
+    
+    ModifiableSolrParams params = new ModifiableSolrParams(sreq.params);
+    params.remove(ShardParams.SHARDS);      // not a top-level request
+    params.set(CommonParams.DISTRIB, "false");               // not a top-level request
+    params.remove("indent");
+    params.remove(CommonParams.HEADER_ECHO_PARAMS);
+    params.set(ShardParams.IS_SHARD, true);  // a sub (shard) request
+    params.set(ShardParams.SHARDS_PURPOSE, sreq.purpose);
+    //params.set(ShardParams.SHARD_URL, rb.get); // so the shard knows what was asked
+    if (rb.requestInfo != null) {
+      // we could try and detect when this is needed, but it could be tricky
+      params.set("NOW", Long.toString(rb.requestInfo.getNOW().getTime()));
+    }
+    String shardQt = params.get(ShardParams.SHARDS_QT);
+    if (shardQt != null) {
+      params.set(CommonParams.QT, shardQt);
+    } else {
+      // for distributed queries that don't include shards.qt, use the original path
+      // as the default but operators need to update their luceneMatchVersion to enable
+      // this behavior since it did not work this way prior to 5.1
+      String reqPath = (String) rb.req.getContext().get(PATH);
+      if (!"/select".equals(reqPath)) {
+        params.set(CommonParams.QT, reqPath);
+      } // else if path is /select, then the qt gets passed thru if set
+    }
+    
+    /*final ShardHandler shardHandler1 = HttpShardHandlerFactory.c(req, rb); 
+    
+    shardHandler1.submit(sreq, "product_shard1_replica1", params, rb.preferredHostAddress);*/
+  }
   /**
    * Actually run the query
    */
@@ -377,6 +427,29 @@ public class QueryComponent extends SearchComponent
     if (cmd.getSegmentTerminateEarly()) {
       result.setSegmentTerminatedEarly(Boolean.FALSE);
     }
+    
+    //Join command handler start
+    QueryCommand multiShardCmd = new QueryCommand();
+    List<Query> joinMultiShardQueries = rb.getJoinSpec().getQueryList();
+    
+    multiShardCmd.setQuery(joinMultiShardQueries.get(0))
+    .setNeedDocSet(true)
+    .setTimeAllowed(timeAllowed);
+    
+    CommandHandler.Builder joinMultiShardActionBuilder = new CommandHandler.Builder()
+        .setQueryCommand(multiShardCmd)
+        .setNeedDocSet(false) // Order matters here
+        .setIncludeHitCount(true)
+        .setSearcher(searcher);
+    
+    
+    CommandHandler joinCommandHandler = joinMultiShardActionBuilder.build();
+    joinCommandHandler.execute();
+    rsp.add("totalHitCount", joinCommandHandler.getTotalHitCount());
+    rsp.getToLog().add("hits", 100);
+    
+    //joinCommandHandler.processResult(result, serializer)
+    // Join command handler end
 
     //
     // grouping / field collapsing
@@ -1121,7 +1194,7 @@ public class QueryComponent extends SearchComponent
 
       SolrDocumentList responseDocs = new SolrDocumentList();
       if (maxScore!=null) responseDocs.setMaxScore(maxScore);
-      responseDocs.setNumFound(numFound);
+      responseDocs.setNumFound(100);
       responseDocs.setStart(ss.getOffset());
       // size appropriately
       for (int i=0; i<resultSize; i++) responseDocs.add(null);

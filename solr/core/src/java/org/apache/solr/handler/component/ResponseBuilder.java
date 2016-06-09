@@ -37,6 +37,7 @@ import org.apache.solr.search.SortSpec;
 import org.apache.solr.search.RankQuery;
 import org.apache.solr.search.grouping.GroupingSpecification;
 import org.apache.solr.search.grouping.distributed.command.QueryCommandResult;
+import org.apache.solr.search.join.JoinSpecification;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -90,6 +91,8 @@ public class ResponseBuilder
   public List<SearchComponent> components;
 
   SolrRequestInfo requestInfo;
+  
+  private JoinSpecification joinSpec;
 
   public ResponseBuilder(SolrQueryRequest req, SolrQueryResponse rsp, List<SearchComponent> components)
   {
@@ -483,4 +486,14 @@ public class ResponseBuilder
   public void setNextCursorMark(CursorMark nextCursorMark) {
     this.nextCursorMark = nextCursorMark;
   }
+  
+
+  public JoinSpecification getJoinSpec() {
+    return joinSpec;
+  }
+
+  public void setJoinSpec(JoinSpecification joinSpec) {
+    this.joinSpec = joinSpec;
+  }
+
 }

@@ -60,6 +60,8 @@ import org.apache.solr.util.RefCounted;
 
 public class JoinQParserPlugin extends QParserPlugin {
   public static final String NAME = "join";
+  
+  private static List<Query> multiShardQueries;
 
   @Override
   public QParser createParser(String qstr, SolrParams localParams, SolrParams params, SolrQueryRequest req) {
@@ -82,6 +84,7 @@ public class JoinQParserPlugin extends QParserPlugin {
         final String toField = getParam("to");
         final String v = localParams.get("v");
         final String coreName;
+        final List<String> coreList;
 
         Query fromQuery;
         long fromCoreOpenTime = 0;
@@ -92,12 +95,12 @@ public class JoinQParserPlugin extends QParserPlugin {
           CloudDescriptor cloudDescriptor = req.getCore().getCoreDescriptor().getCloudDescriptor();
 
           // if in SolrCloud mode, fromIndex should be the name of a single-sharded collection
-          coreName = ScoreJoinQParserPlugin.getCoreName(fromIndex, container, cloudDescriptor, req);
+          coreList = ScoreJoinQParserPlugin.getCoreName(fromIndex, container, cloudDescriptor, req);
 
-          final SolrCore fromCore = container.getCore(coreName);
+          final SolrCore fromCore = container.getCore(coreList.get(0));
           if (fromCore == null) {
             throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
-                "Cross-core join: no such core " + coreName);
+                "Cross-core join: no such core " + coreList.get(0));
           }
 
           RefCounted<SolrIndexSearcher> fromHolder = null;
@@ -114,15 +117,27 @@ public class JoinQParserPlugin extends QParserPlugin {
           }
         } else {
           coreName = null;
+          coreList = null;
           QParser fromQueryParser = subQuery(v, null);
           fromQuery = fromQueryParser.getQuery();
         }
 
-        JoinQuery jq = new JoinQuery(fromField, toField, coreName == null ? fromIndex : coreName, fromQuery);
+        multiShardQueries = new ArrayList<Query>();
+        
+        for(String core: coreList){
+          JoinQuery jq1 = new JoinQuery(fromField, toField, core, fromQuery);
+          multiShardQueries.add(jq1);
+          //jq1.fromCoreOpenTime = fromCoreOpenTime;
+        }
+        JoinQuery jq = new JoinQuery(fromField, toField, coreList, fromQuery);
         jq.fromCoreOpenTime = fromCoreOpenTime;
         return jq;
       }
     };
+  }
+  
+  public static List<Query> getMultiShardQueries(){
+    return multiShardQueries;
   }
 
 }
@@ -134,12 +149,33 @@ class JoinQuery extends Query {
   String fromIndex;
   Query q;
   long fromCoreOpenTime;
+  List<String> fromIndexList;
+  
+  public JoinQuery(String fromField, String toField, List<String> fromIndexList, Query subQuery ){
+    this.fromField = fromField;
+    this.toField = toField;
+    this.fromIndexList = fromIndexList;
+    this.fromIndex = fromIndexList.get(1);
+    this.q = subQuery;
+  }
 
   public JoinQuery(String fromField, String toField, String fromIndex, Query subQuery) {
     this.fromField = fromField;
     this.toField = toField;
     this.fromIndex = fromIndex;
     this.q = subQuery;
+  }
+  
+  public List<Query> getMultiShardQueryList(){
+    List<Query> queryList = new ArrayList<Query>();
+
+    for(String fromIndex : fromIndexList){
+      JoinQuery joinQ = new JoinQuery(fromIndex, toField, fromIndex, q);
+      
+      queryList.add(joinQ);
+    }
+    
+    return queryList;
   }
 
   public Query getQuery() { return q; }
