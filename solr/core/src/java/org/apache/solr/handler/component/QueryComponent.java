@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -62,6 +63,7 @@ import org.apache.solr.common.params.CursorMarkParams;
 import org.apache.solr.common.params.GroupParams;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.params.MoreLikeThisParams;
+import org.apache.solr.common.params.MultiMapSolrParams;
 import org.apache.solr.common.params.ShardParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.common.util.NamedList;
@@ -176,7 +178,8 @@ public class QueryComponent extends SearchComponent
       }
 
       rb.setQuery( q );
-
+      
+      prepareJoinQuery(rb);
       String rankQueryString = rb.req.getParams().get(CommonParams.RQ);
       if(rankQueryString != null) {
         QParser rqparser = QParser.getParser(rankQueryString, defType, req);
@@ -312,11 +315,17 @@ public class QueryComponent extends SearchComponent
   }
 
   
-  private void processJoinQuery(ResponseBuilder rb,ShardRequest sreq){
+  private void prepareJoinQuery(ResponseBuilder rb){
+    ShardRequest sreq = new ShardRequest();
     
-    ModifiableSolrParams params = new ModifiableSolrParams(sreq.params);
+    SolrQueryRequest req = rb.req;
+    SolrParams params1 = req.getParams();
+    ModifiableSolrParams modParams = new ModifiableSolrParams(MultiMapSolrParams.asMultiMap(params1, true));
+    sreq.params = modParams;
+    //sreq.params.add("q", params1.ge)
+    ModifiableSolrParams params = new ModifiableSolrParams(modParams);
     params.remove(ShardParams.SHARDS);      // not a top-level request
-    params.set(CommonParams.DISTRIB, "false");               // not a top-level request
+    //params.set(CommonParams.DISTRIB, "false");               // not a top-level request
     params.remove("indent");
     params.remove(CommonParams.HEADER_ECHO_PARAMS);
     params.set(ShardParams.IS_SHARD, true);  // a sub (shard) request
@@ -338,7 +347,8 @@ public class QueryComponent extends SearchComponent
         params.set(CommonParams.QT, reqPath);
       } // else if path is /select, then the qt gets passed thru if set
     }
-    
+    rb.outgoing = new LinkedList<>();
+    rb.outgoing.add(sreq);
     /*final ShardHandler shardHandler1 = HttpShardHandlerFactory.c(req, rb); 
     
     shardHandler1.submit(sreq, "product_shard1_replica1", params, rb.preferredHostAddress);*/
@@ -445,8 +455,8 @@ public class QueryComponent extends SearchComponent
     
     CommandHandler joinCommandHandler = joinMultiShardActionBuilder.build();
     joinCommandHandler.execute();
-    rsp.add("totalHitCount", joinCommandHandler.getTotalHitCount());
-    rsp.getToLog().add("hits", 100);
+    /*rsp.add("totalHitCount", joinCommandHandler.getTotalHitCount());
+    rsp.getToLog().add("hits", 100);*/
     
     //joinCommandHandler.processResult(result, serializer)
     // Join command handler end
