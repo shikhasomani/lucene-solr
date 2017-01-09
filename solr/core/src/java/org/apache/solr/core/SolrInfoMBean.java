@@ -29,7 +29,15 @@ import org.apache.solr.common.util.NamedList;
  */
 public interface SolrInfoMBean {
 
-  public enum Category { CORE, QUERYHANDLER, UPDATEHANDLER, CACHE, HIGHLIGHTING, QUERYPARSER, OTHER };
+  /**
+   * Category of {@link SolrCore} component.
+   */
+  enum Category { CORE, QUERYHANDLER, UPDATEHANDLER, CACHE, HIGHLIGHTING, QUERYPARSER, SEARCHER, REPLICATION, TLOG, INDEX, DIRECTORY, HTTP, OTHER }
+
+  /**
+   * Top-level group of beans for a subsystem.
+   */
+  enum Group { jvm, jetty, node, core }
 
   /**
    * Simple common usage name, e.g. BasicQueryHandler,

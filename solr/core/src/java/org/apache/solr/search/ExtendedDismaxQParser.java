@@ -55,7 +55,6 @@ import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.schema.FieldType;
 import org.apache.solr.util.SolrPluginUtils;
 
-import com.google.common.base.Function;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
 
@@ -71,26 +70,6 @@ public class ExtendedDismaxQParser extends QParser {
    * map aliases from it to any field in our schema.
    */
   private static String IMPOSSIBLE_FIELD_NAME = "\uFFFC\uFFFC\uFFFC";
-
-  /**
-   * Helper function which returns the specified {@link FieldParams}' {@link FieldParams#getWordGrams()} value.
-   */
-  private static final Function<FieldParams, Integer> WORD_GRAM_EXTRACTOR = new Function<FieldParams, Integer>() {
-    @Override
-    public Integer apply(FieldParams input) {
-      return input.getWordGrams();
-    }
-  };
-
-  /**
-   * Helper function which returns the specified {@link FieldParams}' {@link FieldParams#getSlop()} value.
-   */
-  private static final Function<FieldParams, Integer> PHRASE_SLOP_EXTRACTOR = new Function<FieldParams, Integer>() {
-    @Override
-    public Integer apply(FieldParams input) {
-      return input.getSlop();
-    }
-  };
 
   /** shorten the class references for utilities */
   private static class U extends SolrPluginUtils {
@@ -143,7 +122,6 @@ public class ExtendedDismaxQParser extends QParser {
      * this query is an artificial construct
      */
     BooleanQuery.Builder query = new BooleanQuery.Builder();
-    query.setDisableCoord(true);
     
     /* * * Main User Query * * */
     parsedUserQuery = null;
@@ -247,7 +225,7 @@ public class ExtendedDismaxQParser extends QParser {
       }
 
       // create a map of {wordGram, [phraseField]}
-      Multimap<Integer, FieldParams> phraseFieldsByWordGram = Multimaps.index(allPhraseFields, WORD_GRAM_EXTRACTOR);
+      Multimap<Integer, FieldParams> phraseFieldsByWordGram = Multimaps.index(allPhraseFields, FieldParams::getWordGrams);
 
       // for each {wordGram, [phraseField]} entry, create and add shingled field queries to the main user query
       for (Map.Entry<Integer, Collection<FieldParams>> phraseFieldsByWordGramEntry : phraseFieldsByWordGram.asMap().entrySet()) {
@@ -255,7 +233,7 @@ public class ExtendedDismaxQParser extends QParser {
         // group the fields within this wordGram collection by their associated slop (it's possible that the same
         // field appears multiple times for the same wordGram count but with different slop values. In this case, we
         // should take the *sum* of those phrase queries, rather than the max across them).
-        Multimap<Integer, FieldParams> phraseFieldsBySlop = Multimaps.index(phraseFieldsByWordGramEntry.getValue(), PHRASE_SLOP_EXTRACTOR);
+        Multimap<Integer, FieldParams> phraseFieldsBySlop = Multimaps.index(phraseFieldsByWordGramEntry.getValue(), FieldParams::getSlop);
         for (Map.Entry<Integer, Collection<FieldParams>> phraseFieldsBySlopEntry : phraseFieldsBySlop.asMap().entrySet()) {
           addShingledPhraseQueries(query, normalClauses, phraseFieldsBySlopEntry.getValue(),
               phraseFieldsByWordGramEntry.getKey(), config.tiebreaker, phraseFieldsBySlopEntry.getKey());
@@ -978,7 +956,6 @@ public class ExtendedDismaxQParser extends QParser {
     }
     
     boolean makeDismax=true;
-    boolean disableCoord=true;
     boolean allowWildcard=true;
     int minClauseSize = 0;    // minimum number of clauses per phrase query...
     // used when constructing boosting part of query via sloppy phrases
@@ -1055,8 +1032,8 @@ public class ExtendedDismaxQParser extends QParser {
     }
     
     @Override
-    protected Query getFieldQuery(String field, String val, boolean quoted) throws SyntaxError {
-      this.type = QType.FIELD;
+    protected Query getFieldQuery(String field, String val, boolean quoted, boolean raw) throws SyntaxError {
+      this.type = quoted ? QType.PHRASE : QType.FIELD;
       this.field = field;
       this.val = val;
       this.slop = getPhraseSlop(); // unspecified
@@ -1159,9 +1136,7 @@ public class ExtendedDismaxQParser extends QParser {
           DisjunctionMaxQuery q = new DisjunctionMaxQuery(lst, a.tie);
           return q;
         } else {
-          // should we disable coord?
           BooleanQuery.Builder q = new BooleanQuery.Builder();
-          q.setDisableCoord(disableCoord);
           for (Query sub : lst) {
             q.add(sub, BooleanClause.Occur.SHOULD);
           }
@@ -1237,18 +1212,12 @@ public class ExtendedDismaxQParser extends QParser {
         switch (type) {
           case FIELD:  // fallthrough
           case PHRASE:
-            Query query = super.getFieldQuery(field, val, type == QType.PHRASE);
-            // A BooleanQuery is only possible from getFieldQuery if it came from
-            // a single whitespace separated term. In this case, check the coordination
-            // factor on the query: if it's enabled, that means we aren't a set of synonyms
-            // but instead multiple terms from one whitespace-separated term, we must
-            // apply minShouldMatch here so that it works correctly with other things
-            // like aliasing.
+            Query query = super.getFieldQuery(field, val, type == QType.PHRASE, false);
+            // Boolean query on a whitespace-separated string
+            // If these were synonyms we would have a SynonymQuery
             if (query instanceof BooleanQuery) {
               BooleanQuery bq = (BooleanQuery) query;
-              if (!bq.isCoordDisabled()) {
-                query = SolrPluginUtils.setMinShouldMatch(bq, minShouldMatch, false);
-              }
+              query = SolrPluginUtils.setMinShouldMatch(bq, minShouldMatch, false);
             }
             if (query instanceof PhraseQuery) {
               PhraseQuery pq = (PhraseQuery)query;

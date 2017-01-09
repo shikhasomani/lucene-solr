@@ -110,7 +110,7 @@ public abstract class BaseDirectoryTestCase extends LuceneTestCase {
     output.writeBytes(bytes, bytes.length);
     output.close();
     
-    dir.renameFile("foobar", "foobaz");
+    dir.rename("foobar", "foobaz");
     
     IndexInput input = dir.openInput("foobaz", newIOContext(random()));
     byte bytes2[] = new byte[numBytes];
@@ -290,36 +290,6 @@ public abstract class BaseDirectoryTestCase extends LuceneTestCase {
     dir.close();
   }
 
-  public void testStringSet() throws Exception {
-    Directory dir = getDirectory(createTempDir("testStringSet"));
-    IndexOutput output = dir.createOutput("stringset", newIOContext(random()));
-    output.writeStringSet(asSet("test1", "test2"));
-    output.close();
-    
-    IndexInput input = dir.openInput("stringset", newIOContext(random()));
-    assertEquals(16, input.length());
-    assertEquals(asSet("test1", "test2"), input.readStringSet());
-    input.close();
-    dir.close();
-  }
-  
-  public void testStringMap() throws Exception {
-    Map<String,String> m = new HashMap<>();
-    m.put("test1", "value1");
-    m.put("test2", "value2");
-    
-    Directory dir = getDirectory(createTempDir("testStringMap"));
-    IndexOutput output = dir.createOutput("stringmap", newIOContext(random()));
-    output.writeStringStringMap(m);
-    output.close();
-    
-    IndexInput input = dir.openInput("stringmap", newIOContext(random()));
-    assertEquals(30, input.length());
-    assertEquals(m, input.readStringStringMap());
-    input.close();
-    dir.close();
-  }
-  
   public void testSetOfStrings() throws Exception {
     Directory dir = getDirectory(createTempDir("testSetOfStrings"));
     
@@ -1196,7 +1166,7 @@ public abstract class BaseDirectoryTestCase extends LuceneTestCase {
 
       // Make sure rename fails:
       expectThrows(NoSuchFileException.class, () -> {      
-        fsDir.renameFile(fileName, "file2");
+        fsDir.rename(fileName, "file2");
       });
 
       // Make sure delete fails:

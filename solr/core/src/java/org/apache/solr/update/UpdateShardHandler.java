@@ -17,8 +17,10 @@
 package org.apache.solr.update;
 
 import java.lang.invoke.MethodHandles;
+import java.net.URL;
 import java.util.concurrent.ExecutorService;
 
+import com.codahale.metrics.InstrumentedExecutorService;
 import org.apache.http.client.HttpClient;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
@@ -27,11 +29,17 @@ import org.apache.solr.cloud.RecoveryStrategy;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.ModifiableSolrParams;
 import org.apache.solr.common.util.ExecutorUtil;
+import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SolrjNamedThreadFactory;
+import org.apache.solr.core.SolrInfoMBean;
+import org.apache.solr.metrics.SolrMetricManager;
+import org.apache.solr.metrics.SolrMetricProducer;
+import org.apache.solr.util.stats.InstrumentedHttpRequestExecutor;
+import org.apache.solr.util.stats.InstrumentedPoolingHttpClientConnectionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class UpdateShardHandler {
+public class UpdateShardHandler implements SolrMetricProducer, SolrInfoMBean {
   
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
@@ -50,20 +58,82 @@ public class UpdateShardHandler {
   
   private final CloseableHttpClient client;
 
-  private final PoolingHttpClientConnectionManager clientConnectionManager;
+  private final InstrumentedPoolingHttpClientConnectionManager clientConnectionManager;
+
+  private final InstrumentedHttpRequestExecutor httpRequestExecutor;
 
   public UpdateShardHandler(UpdateShardHandlerConfig cfg) {
-    clientConnectionManager = new PoolingHttpClientConnectionManager(HttpClientUtil.getSchemaRegisteryProvider().getSchemaRegistry());
+    clientConnectionManager = new InstrumentedPoolingHttpClientConnectionManager(HttpClientUtil.getSchemaRegisteryProvider().getSchemaRegistry());
     if (cfg != null ) {
       clientConnectionManager.setMaxTotal(cfg.getMaxUpdateConnections());
       clientConnectionManager.setDefaultMaxPerRoute(cfg.getMaxUpdateConnectionsPerHost());
     }
 
     ModifiableSolrParams clientParams = new ModifiableSolrParams();
-    log.info("Creating UpdateShardHandler HTTP client with params: {}", clientParams);
-    client = HttpClientUtil.createClient(clientParams, clientConnectionManager);
+    if (cfg != null)  {
+      clientParams.set(HttpClientUtil.PROP_SO_TIMEOUT, cfg.getDistributedSocketTimeout());
+      clientParams.set(HttpClientUtil.PROP_CONNECTION_TIMEOUT, cfg.getDistributedConnectionTimeout());
+    }
+    httpRequestExecutor = new InstrumentedHttpRequestExecutor();
+    client = HttpClientUtil.createClient(clientParams, clientConnectionManager, false, httpRequestExecutor);
+
+    // following is done only for logging complete configuration.
+    // The maxConnections and maxConnectionsPerHost have already been specified on the connection manager
+    if (cfg != null)  {
+      clientParams.set(HttpClientUtil.PROP_MAX_CONNECTIONS, cfg.getMaxUpdateConnections());
+      clientParams.set(HttpClientUtil.PROP_MAX_CONNECTIONS_PER_HOST, cfg.getMaxUpdateConnectionsPerHost());
+    }
+    log.debug("Created UpdateShardHandler HTTP client with params: {}", clientParams);
   }
-  
+
+  @Override
+  public String getName() {
+    return this.getClass().getName();
+  }
+
+  @Override
+  public String getVersion() {
+    return getClass().getPackage().getSpecificationVersion();
+  }
+
+  @Override
+  public void initializeMetrics(SolrMetricManager manager, String registry, String scope) {
+    String expandedScope = SolrMetricManager.mkName(scope, getCategory().name());
+    clientConnectionManager.initializeMetrics(manager, registry, expandedScope);
+    httpRequestExecutor.initializeMetrics(manager, registry, expandedScope);
+    updateExecutor = new InstrumentedExecutorService(updateExecutor,
+        manager.registry(registry),
+        SolrMetricManager.mkName("updateExecutor", expandedScope, "threadPool"));
+    recoveryExecutor = new InstrumentedExecutorService(recoveryExecutor,
+        manager.registry(registry),
+        SolrMetricManager.mkName("recoveryExecutor", expandedScope, "threadPool"));
+  }
+
+  @Override
+  public String getDescription() {
+    return "Metrics tracked by UpdateShardHandler related to distributed updates and recovery";
+  }
+
+  @Override
+  public Category getCategory() {
+    return Category.HTTP;
+  }
+
+  @Override
+  public String getSource() {
+    return null;
+  }
+
+  @Override
+  public URL[] getDocs() {
+    return new URL[0];
+  }
+
+  @Override
+  public NamedList getStatistics() {
+    return null;
+  }
+
   public HttpClient getHttpClient() {
     return client;
   }

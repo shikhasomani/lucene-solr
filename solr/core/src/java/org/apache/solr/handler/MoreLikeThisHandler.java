@@ -117,7 +117,7 @@ public class MoreLikeThisHandler extends RequestHandlerBase
           if (q != null) {
             QParser parser = QParser.getParser(q, defType, req);
             query = parser.getQuery();
-            sortSpec = parser.getSort(true);
+            sortSpec = parser.getSortSpec(true);
           }
 
           String[] fqs = req.getParams().getParams(CommonParams.FQ);
@@ -125,7 +125,7 @@ public class MoreLikeThisHandler extends RequestHandlerBase
             filters = new ArrayList<>();
             for (String fq : fqs) {
               if (fq != null && fq.trim().length() != 0) {
-                QParser fqp = QParser.getParser(fq, null, req);
+                QParser fqp = QParser.getParser(fq, req);
                 filters.add(fqp.getQuery());
               }
             }
@@ -360,7 +360,6 @@ public class MoreLikeThisHandler extends RequestHandlerBase
       BooleanQuery boostedQuery = (BooleanQuery)mltquery;
       if (boostFields.size() > 0) {
         BooleanQuery.Builder newQ = new BooleanQuery.Builder();
-        newQ.setDisableCoord(boostedQuery.isCoordDisabled());
         newQ.setMinimumNumberShouldMatch(boostedQuery.getMinimumNumberShouldMatch());
         for (BooleanClause clause : boostedQuery) {
           Query q = clause.getQuery();

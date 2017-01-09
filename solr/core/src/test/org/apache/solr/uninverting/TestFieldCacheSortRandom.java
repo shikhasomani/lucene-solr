@@ -268,8 +268,8 @@ public class TestFieldCacheSortRandom extends LuceneTestCase {
     }
 
     @Override
-    public Weight createWeight(IndexSearcher searcher, boolean needsScores) throws IOException {
-      return new ConstantScoreWeight(this) {
+    public Weight createWeight(IndexSearcher searcher, boolean needsScores, float boost) throws IOException {
+      return new ConstantScoreWeight(this, boost) {
         @Override
         public Scorer scorer(LeafReaderContext context) throws IOException {
           Random random = new Random(seed ^ context.docBase);
@@ -281,7 +281,8 @@ public class TestFieldCacheSortRandom extends LuceneTestCase {
             if (random.nextFloat() <= density) {
               bits.set(docID);
               //System.out.println("  acc id=" + idSource.getInt(docID) + " docID=" + docID);
-              matchValues.add(docValues.get((int) idSource.get(docID)));
+              assertEquals(docID, idSource.advance(docID));
+              matchValues.add(docValues.get((int) idSource.longValue()));
             }
           }
 

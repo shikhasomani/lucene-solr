@@ -75,8 +75,8 @@ final class GeoPointTermQueryConstantScoreWrapper <Q extends GeoPointMultiTermQu
   }
 
   @Override
-  public Weight createWeight(IndexSearcher searcher, boolean needsScores) throws IOException {
-    return new ConstantScoreWeight(this) {
+  public Weight createWeight(IndexSearcher searcher, boolean needsScores, float boost) throws IOException {
+    return new ConstantScoreWeight(this, boost) {
 
       @Override
       public Scorer scorer(LeafReaderContext context) throws IOException {
@@ -132,12 +132,16 @@ final class GeoPointTermQueryConstantScoreWrapper <Q extends GeoPointMultiTermQu
             if (preApproved.get(docId)) {
               return true;
             } else {
-              sdv.setDocument(docId);
-              int count = sdv.count();
-              for (int i = 0; i < count; i++) {
-                long hash = sdv.valueAt(i);
-                if (termsEnum.postFilter(GeoPointField.decodeLatitude(hash), GeoPointField.decodeLongitude(hash))) {
-                  return true;
+              if (docId > sdv.docID()) {
+                sdv.advance(docId);
+              }
+              if (docId == sdv.docID()) {
+                int count = sdv.docValueCount();
+                for (int i = 0; i < count; i++) {
+                  long hash = sdv.nextValue();
+                  if (termsEnum.postFilter(GeoPointField.decodeLatitude(hash), GeoPointField.decodeLongitude(hash))) {
+                    return true;
+                  }
                 }
               }
               return false;

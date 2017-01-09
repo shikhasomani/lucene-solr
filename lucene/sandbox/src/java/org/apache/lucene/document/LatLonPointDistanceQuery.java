@@ -67,7 +67,7 @@ final class LatLonPointDistanceQuery extends Query {
   }
 
   @Override
-  public Weight createWeight(IndexSearcher searcher, boolean needsScores) throws IOException {
+  public Weight createWeight(IndexSearcher searcher, boolean needsScores, float boost) throws IOException {
     Rectangle box = Rectangle.fromPointDistance(latitude, longitude, radiusMeters);
     // create bounding box(es) for the distance range
     // these are pre-encoded with LatLonPoint's encoding
@@ -100,12 +100,12 @@ final class LatLonPointDistanceQuery extends Query {
 
     final double axisLat = Rectangle.axisLat(latitude, radiusMeters);
 
-    return new ConstantScoreWeight(this) {
+    return new ConstantScoreWeight(this, boost) {
 
       @Override
       public Scorer scorer(LeafReaderContext context) throws IOException {
         LeafReader reader = context.reader();
-        PointValues values = reader.getPointValues();
+        PointValues values = reader.getPointValues(field);
         if (values == null) {
           // No docs in this segment had any points fields
           return null;
@@ -120,7 +120,7 @@ final class LatLonPointDistanceQuery extends Query {
         // matching docids
         DocIdSetBuilder result = new DocIdSetBuilder(reader.maxDoc(), values, field);
 
-        values.intersect(field,
+        values.intersect(
                          new IntersectVisitor() {
 
                            DocIdSetBuilder.BulkAdder adder;

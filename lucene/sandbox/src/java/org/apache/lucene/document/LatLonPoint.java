@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.lucene.codecs.lucene60.Lucene60PointsFormat;
-import org.apache.lucene.codecs.lucene60.Lucene60PointsReader;
 import org.apache.lucene.geo.GeoUtils;
 import org.apache.lucene.geo.Polygon;
 import org.apache.lucene.index.FieldInfo;
@@ -191,12 +190,12 @@ public class LatLonPoint extends Field {
     // and should not drag in extra bogus junk! TODO: should encodeCeil just throw ArithmeticException to be less trappy here?
     if (minLatitude == 90.0) {
       // range cannot match as 90.0 can never exist
-      return new MatchNoDocsQuery();
+      return new MatchNoDocsQuery("LatLonPoint.newBoxQuery with minLatitude=90.0");
     }
     if (minLongitude == 180.0) {
       if (maxLongitude == 180.0) {
         // range cannot match as 180.0 can never exist
-        return new MatchNoDocsQuery();
+        return new MatchNoDocsQuery("LatLonPoint.newBoxQuery with minLongitude=maxLongitude=180.0");
       } else if (maxLongitude < minLongitude) {
         // encodeCeil() with dateline wrapping!
         minLongitude = -180.0;
@@ -208,7 +207,6 @@ public class LatLonPoint extends Field {
     if (maxLongitude < minLongitude) {
       // Disable coord here because a multi-valued doc could match both rects and get unfairly boosted:
       BooleanQuery.Builder q = new BooleanQuery.Builder();
-      q.setDisableCoord(true);
 
       // E.g.: maxLon = -179, minLon = 179
       byte[] leftOpen = lower.clone();
@@ -308,13 +306,13 @@ public class LatLonPoint extends Field {
     List<Bits> liveDocs = new ArrayList<>();
     int totalHits = 0;
     for(LeafReaderContext leaf : searcher.getIndexReader().leaves()) {
-      PointValues points = leaf.reader().getPointValues();
+      PointValues points = leaf.reader().getPointValues(field);
       if (points != null) {
-        if (points instanceof Lucene60PointsReader == false) {
+        if (points instanceof BKDReader == false) {
           throw new IllegalArgumentException("can only run on Lucene60PointsReader points implementation, but got " + points);
         }
-        totalHits += points.getDocCount(field);
-        BKDReader reader = ((Lucene60PointsReader) points).getBKDReader(field);
+        totalHits += points.getDocCount();
+        BKDReader reader = (BKDReader) points;
         if (reader != null) {
           readers.add(reader);
           docBases.add(leaf.docBase);

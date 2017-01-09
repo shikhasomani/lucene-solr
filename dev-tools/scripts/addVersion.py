@@ -173,19 +173,17 @@ def check_solr_version_tests():
   os.chdir(base_dir)
   print('ok')
 
-def read_config():
+def read_config(current_version):
   parser = argparse.ArgumentParser(description='Add a new version')
   parser.add_argument('version', type=Version.parse)
-  c = parser.parse_args()
+  newconf = parser.parse_args()
 
-  c.branch_type = find_branch_type()
-  c.matching_branch = c.version.is_bugfix_release() and c.branch_type == BranchType.release or \
-                      c.version.is_minor_release() and c.branch_type == BranchType.stable or \
-                      c.version.is_major_release() and c.branch_type == BranchType.unstable
+  newconf.branch_type = find_branch_type()
+  newconf.is_latest_version = newconf.version.on_or_after(current_version)
 
-  print ("branch_type is %s " % c.branch_type)
+  print ("branch_type is %s " % newconf.branch_type)
 
-  return c
+  return newconf
 
 # Hack ConfigParser, designed to parse INI files, to parse & interpolate Java .properties files
 def parse_properties_file(filename):
@@ -212,24 +210,30 @@ def get_solr_init_changes():
     ''' % parse_properties_file('lucene/ivy-versions.properties'))
   
 def main():
-  c = read_config() 
+  current_version = Version.parse(find_current_version())
+  newconf = read_config(current_version)
 
-  print('\nAdding new version %s' % c.version)
-  update_changes('lucene/CHANGES.txt', c.version)
-  update_changes('solr/CHANGES.txt', c.version, get_solr_init_changes())
-  add_constant(c.version, not c.matching_branch)
+  print('\nAdding new version %s' % newconf.version)
+  update_changes('lucene/CHANGES.txt', newconf.version)
+  update_changes('solr/CHANGES.txt', newconf.version, get_solr_init_changes())
 
-  if c.matching_branch:
+  latest_or_backcompat = newconf.is_latest_version or current_version.is_back_compat_with(newconf.version)
+  if latest_or_backcompat:
+    add_constant(newconf.version, not newconf.is_latest_version)
+  else:
+    print('\nNot adding constant for version %s because it is no longer supported' % newconf.version)
+
+  if newconf.is_latest_version:
     print('\nUpdating latest version')
-    update_build_version(c.version)
-    update_latest_constant(c.version)
-    update_example_solrconfigs(c.version)
+    update_build_version(newconf.version)
+    update_latest_constant(newconf.version)
+    update_example_solrconfigs(newconf.version)
 
-  if c.version.is_major_release():
+  if newconf.version.is_major_release():
     print('\nTODO: ')
     print('  - Move backcompat oldIndexes to unsupportedIndexes in TestBackwardsCompatibility')
     print('  - Update IndexFormatTooOldException throw cases')
-  else:
+  elif latest_or_backcompat:
     print('\nTesting changes')
     check_lucene_version_tests()
     check_solr_version_tests()

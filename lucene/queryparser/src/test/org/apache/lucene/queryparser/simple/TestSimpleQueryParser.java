@@ -477,7 +477,6 @@ public class TestSimpleQueryParser extends LuceneTestCase {
     weights.put("field1", 10f);
 
     BooleanQuery.Builder expected = new BooleanQuery.Builder();
-    expected.setDisableCoord(true);
     Query field0 = new TermQuery(new Term("field0", "foo"));
     field0 = new BoostQuery(field0, 5f);
     expected.add(field0, Occur.SHOULD);
@@ -498,7 +497,6 @@ public class TestSimpleQueryParser extends LuceneTestCase {
 
     BooleanQuery.Builder expected = new BooleanQuery.Builder();
     BooleanQuery.Builder foo = new BooleanQuery.Builder();
-    foo.setDisableCoord(true);
     Query field0 = new TermQuery(new Term("field0", "foo"));
     field0 = new BoostQuery(field0, 5f);
     foo.add(field0, Occur.SHOULD);
@@ -508,7 +506,6 @@ public class TestSimpleQueryParser extends LuceneTestCase {
     expected.add(foo.build(), Occur.SHOULD);
 
     BooleanQuery.Builder bar = new BooleanQuery.Builder();
-    bar.setDisableCoord(true);
     field0 = new TermQuery(new Term("field0", "bar"));
     field0 = new BoostQuery(field0, 5f);
     bar.add(field0, Occur.SHOULD);
@@ -625,5 +622,12 @@ public class TestSimpleQueryParser extends LuceneTestCase {
       parse(sb.toString()); // no exception
       parseKeyword(sb.toString(), TestUtil.nextInt(random(), 0, 1024)); // no exception
     }
+  }
+
+  public void testStarBecomesMatchAll() throws Exception {
+    Query q = parse("*");
+    assertEquals(q, new MatchAllDocsQuery());
+    q = parse(" *   ");
+    assertEquals(q, new MatchAllDocsQuery());
   }
 }
