@@ -78,6 +78,7 @@ public class JoinQParserPlugin extends QParserPlugin {
         final String fromIndex = getParam("fromIndex");
         final String toField = getParam("to");
         final String v = localParams.get("v");
+        final String rangeCheck = getParam("rangeCheck");
         final String coreName;
 
         Query fromQuery;
@@ -86,8 +87,9 @@ public class JoinQParserPlugin extends QParserPlugin {
         if (fromIndex != null && !fromIndex.equals(req.getCore().getCoreDescriptor().getName()) ) {
           CoreContainer container = req.getCore().getCoreDescriptor().getCoreContainer();
 
+          boolean isRangeCheck = Boolean.valueOf(rangeCheck);
           // if in SolrCloud mode, fromIndex should be the name of a single-sharded collection
-          coreName = ScoreJoinQParserPlugin.getCoreName(fromIndex, container, req);
+          coreName = ScoreJoinQParserPlugin.getCoreName(fromIndex, container, req, isRangeCheck);
 
           final SolrCore fromCore = container.getCore(coreName);
           if (fromCore == null) {

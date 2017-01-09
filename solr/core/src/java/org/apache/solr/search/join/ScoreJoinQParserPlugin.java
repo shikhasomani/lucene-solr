@@ -34,7 +34,6 @@ import org.apache.solr.common.cloud.Replica;
 import org.apache.solr.common.cloud.Slice;
 import org.apache.solr.common.cloud.ZkStateReader;
 import org.apache.solr.common.params.CommonParams;
-import org.apache.solr.common.params.SearchParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.CoreDescriptor;
@@ -210,24 +209,25 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
         final String fromIndex = localParams.get("fromIndex");
         final String toField = localParams.get("to");
         final ScoreMode scoreMode = ScoreModeParser.parse(getParam(SCORE));
+        final boolean isRangeCheck = localParams.getBool("rangeCheck", false);
 
         final String v = localParams.get(CommonParams.VALUE);
 
-        final Query q = createQuery(fromField, v, fromIndex, toField, scoreMode,
+        final Query q = createQuery(fromField, v, fromIndex, toField, isRangeCheck, scoreMode,
             CommonParams.TRUE.equals(localParams.get("TESTenforceSameCoreAsAnotherOne")));
 
         return q;
       }
 
       private Query createQuery(final String fromField, final String fromQueryStr,
-                                String fromIndex, final String toField, final ScoreMode scoreMode,
+                                String fromIndex, final String toField, final boolean isRangeCheck, final ScoreMode scoreMode,
                                 boolean byPassShortCircutCheck) throws SyntaxError {
 
         final String myCore = req.getCore().getCoreDescriptor().getName();
 
         if (fromIndex != null && (!fromIndex.equals(myCore) || byPassShortCircutCheck)) {
           CoreContainer container = req.getCore().getCoreDescriptor().getCoreContainer();
-          final String coreName = getCoreName(fromIndex, container, req);
+          final String coreName = getCoreName(fromIndex, container, req, isRangeCheck);
           final SolrCore fromCore = container.getCore(coreName);
           RefCounted<SolrIndexSearcher> fromHolder = null;
 
@@ -272,9 +272,10 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
    *
    * @param  fromIndex name of the index
    * @param  container the core container for searching the core with fromIndex name or alias
+   * @param  isRangeCheck - rangeCheck parameter value
    * @return      the string with name of core
    */
-  public static String getCoreName(final String fromIndex, CoreContainer container, SolrQueryRequest req) {
+  public static String getCoreName(final String fromIndex, CoreContainer container, SolrQueryRequest req, boolean isRangeCheck) {
     if (container.isZooKeeperAware()) {
       ZkController zkController = container.getZkController();
       final String resolved =
@@ -284,7 +285,7 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
         throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
             "SolrCloud join: Collection '" + fromIndex + "' not found!");
       }
-      return findLocalReplicaForFromIndex(zkController, resolved, req);
+      return findLocalReplicaForFromIndex(zkController, resolved, req, isRangeCheck);
     }
     return fromIndex;
   }
@@ -315,12 +316,12 @@ public class ScoreJoinQParserPlugin extends QParserPlugin {
    * @param zkController the zk controller
    * @param fromIndex the from index
    * @param req the req
+   * @param isRangeCheck - checks if rangeCheck parameter is passed. Based on it selects either replicated or sharded shard.
    * @return the string
    */
-  private static String findLocalReplicaForFromIndex(ZkController zkController, String fromIndex, SolrQueryRequest req) {
+  private static String findLocalReplicaForFromIndex(ZkController zkController, String fromIndex, SolrQueryRequest req, boolean isRangeCheck) {
     String fromReplica = null;
     
-    boolean isRangeCheck = req.getParams().getBool(SearchParams.RANGE_CHECK, false);
     if(isRangeCheck){
       //In-case of exact range match option, find a shard of fromCollection which resides on this node and whose range matches
       //toShard range exactly.
